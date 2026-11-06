@@ -1,0 +1,20 @@
+[package]
+name = "nautilus_image_compressor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.103"
+argh = "0.1.19"
+image = { version = "0.25.10", features = ["avif-native"] }
+gtk = { version = "0.11", package = "gtk4", features = ["v4_22"] }
+gdk4-x11 = { version = "0.11", features = ["xlib"] }
+relm4 = { version = "0.11", features = ["libadwaita"] }
+gdk4-wayland = "0.11"
+rayon = "1.12.0"
+mozjpeg-rs = "0.9.2"
+imagequant = "4.4.1"
+oxipng = { version = "10.2.1", default-features = false, features = ["parallel", "zopfli"] }
+webp = "0.3.1"
+ravif = { version = "0.13.0", default-features = false, features = ["threading"] }
+rgb = "0.8.53"
