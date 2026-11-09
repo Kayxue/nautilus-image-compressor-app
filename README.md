@@ -8,7 +8,7 @@ Application part of Nautilus Image Converter Reborn, which can help you convert,
 * **Launch from CLI:** As it becomes a standalone app, you can launch it form other places through CLI interface directly.
 
 ## Screenshots
-|![](./static/screenshot1.png)|
+![](./static/screenshot1.png)
 
 ## Limitation
 * **Jpeg/Png/WebP/Avif only:** This app only supports Jpeg, Png, Webp and Avif 
