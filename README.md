@@ -1,11 +1,11 @@
-# Nautilus Image Converter Reborn - App
+# Nautilus Image Compressor - App
 
-Application part of Nautilus Image Converter Reborn, which can help you convert, resize, and rotate images.
+Application part of Nautilus Image Compressor, which can help you compress images.
 
 ## Features
-* **Standalone app:** It now becomes a standalone app, not binding to Nautilus File Manager anymore. However, you can still bind parent window via CLI arguments.
+* **Standalone app:** It's not binding to Nautilus File Manager. However, you can bind parent window via CLI arguments.
 * **Parallelism:** Instead of processing images one by one, this app process images in parallel by rayon.
-* **Launch from CLI:** As it becomes a standalone app, you can launch it form other places through CLI interface directly.
+* **Launch from CLI:** As it's a standalone app, you can launch it form other places through CLI interface directly.
 
 ## Screenshots
 ![](./static/screenshot1.png)
