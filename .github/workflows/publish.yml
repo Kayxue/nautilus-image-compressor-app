@@ -1,0 +1,194 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Build Linux packages (.deb + .rpm) for x86_64 and arm64
+  # Per-matrix container strategy:
+  #   • x86_64  → ghcr.io/gtk-rs/gtk4-rs/gtk4:latest (Fedora-based, amd64 only)
+  #              GTK4 ≥ 4.21 pre-built; recommended by the Relm4 book.
+  #   • arm64   → fedora:latest
+  #              gtk4-rs container has NO arm64 image. fedora:latest has official
+  #              arm64 images and GTK4 in its repos.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-linux-packages:
+    name: 📦 Linux packages (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.container }}
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            rust-target: x86_64-unknown-linux-gnu
+            deb-arch: amd64
+            # Fedora-based; GTK4 >= 4.21 already installed in the image
+            container: ghcr.io/gtk-rs/gtk4-rs/gtk4:latest
+
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            rust-target: aarch64-unknown-linux-gnu
+            deb-arch: arm64
+            # gtk4-rs container is amd64-only. Use fedora:latest instead:
+            #   • bash is pre-installed
+            #   • official arm64 Docker image available
+            #   • ships GTK4 >= 4.22 (Fedora tracks GNOME releases)
+            #   • same dnf package manager as x86_64 → consistent steps
+            container: fedora:latest
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v7
+
+      # Both containers are Fedora-based and use dnf.
+      # x86_64 (gtk4-rs): GTK4 dev libraries already in the image; install gcc, mold, libadwaita-devel, and libdav1d-devel.
+      # arm64  (fedora):  Install GTK4 dev libraries (pulls in Wayland/X11 headers) + gcc, mold, libadwaita-devel, and libdav1d-devel.
+      - name: ⚙️ Install build tools
+        run: |
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            dnf install -y \
+              gcc \
+              mold \
+              libadwaita-devel \
+              libdav1d-devel
+          else
+            dnf install -y \
+              gcc \
+              mold \
+              gtk4-devel \
+              libadwaita-devel \
+              libdav1d-devel
+          fi
+
+      # ── Linker ───────────────────────────────────────────────────────────
+      # Tell rustc to ask gcc to link with mold explicitly. Overwriting /usr/bin/ld
+      # is unreliable: gcc's collect2 resolves ld via its own search paths
+      # (e.g. /usr/libexec/gcc/<triple>/..., <triple>-ld) and may bypass the symlink,
+      # which is what happens on the arm64 Fedora image.
+      # gcc provides the C compiler (cc) needed by rustc and proc-macro build scripts.
+      - name: ⚡ Set up mold linker
+        run: |
+          mold --version
+          echo "RUSTFLAGS=-C link-arg=-fuse-ld=mold" >> "$GITHUB_ENV"
+
+      # ── Rust toolchain ────────────────────────────────────────────────────
+      - name: 🦀 Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: 🗄️ Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+
+      # ── Build release binary ──────────────────────────────────────────────
+      - name: 🛠️ Build release binary
+        run: cargo build --release --locked --target ${{ matrix.rust-target }}
+
+      # Cargo packaging tools expect the binary at target/release/, not
+      # target/<triple>/release/. Copy it so both cargo-deb and
+      # cargo-generate-rpm find it without extra flags.
+      - name: 🔗 Expose binary at target/release/
+        run: |
+          mkdir -p target/release
+          cp target/${{ matrix.rust-target }}/release/nautilus_image_compressor \
+             target/release/nautilus_image_compressor
+
+      # ── Install packaging tools ───────────────────────────────────────────
+      - name: ⬇️ Install cargo-deb and cargo-generate-rpm
+        run: |
+          cargo install cargo-deb --locked
+          cargo install cargo-generate-rpm --locked
+
+      # ── .deb ─────────────────────────────────────────────────────────────
+      - name: 📬 Create .deb package
+        run: |
+          cargo deb --no-build --target ${{ matrix.rust-target }}
+          # Move to a predictable location for the upload step
+          mkdir -p dist
+          cp target/${{ matrix.rust-target }}/debian/*.deb \
+             dist/nautilus-image-compressor_${{ matrix.arch }}.deb
+
+      # ── .rpm ─────────────────────────────────────────────────────────────
+      - name: 📬 Create .rpm package
+        run: |
+          cargo generate-rpm --target ${{ matrix.rust-target }}
+          mkdir -p dist
+          cp target/${{ matrix.rust-target }}/generate-rpm/*.rpm \
+             dist/nautilus-image-compressor_${{ matrix.arch }}.rpm
+
+      # ── Upload artifacts ──────────────────────────────────────────────────
+      - name: ⬆️ Upload .deb artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*.deb
+
+      - name: ⬆️ Upload .rpm artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpm-${{ matrix.arch }}
+          path: dist/*.rpm
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Create a GitHub Release and attach all packages (tag pushes only)
+  # ─────────────────────────────────────────────────────────────────────────────
+  create-release:
+    name: 🚀 Create GitHub Release
+    needs: [build-linux-packages]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: ⬇️ Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: 📝 Generate release notes
+        id: notes
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=Release $TAG" >> "$GITHUB_OUTPUT"
+          {
+            echo 'body<<EOF'
+            echo "## What's changed in $TAG"
+            git log --pretty=format:'- %s' "$(git describe --tags --abbrev=0 HEAD^)"..HEAD || \
+            git log --pretty=format:'- %s' -n 10
+            echo
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 🚀 Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.notes.outputs.tag }}
+          name: ${{ steps.notes.outputs.name }}
+          body: ${{ steps.notes.outputs.body }}
+          draft: false
+          prerelease: false
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

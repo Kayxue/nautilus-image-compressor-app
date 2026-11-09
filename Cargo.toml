@@ -2,6 +2,10 @@
 name = "nautilus_image_compressor"
 version = "0.1.0"
 edition = "2024"
+authors = ["KayXue <s0990006@gmail.com>"]
+description = "A GTK4 image compression tool for Nautilus"
+license = "MIT"
+repository = "https://github.com/Kayxue/nautilus-image-compressor-app"
 
 [dependencies]
 anyhow = "1.0.103"
@@ -18,3 +22,22 @@ oxipng = { version = "10.2.1", default-features = false, features = ["parallel",
 webp = "0.3.1"
 ravif = { version = "0.13.0", default-features = false, features = ["threading"] }
 rgb = "0.8.53"
+
+
+[package.metadata.deb]
+name = "nautilus-image-compressor"
+maintainer = "KayXue <s0990006@gmail.com>"
+copyright = "2026, KayXue <s0990006@gmail.com>"
+license-file = ["LICENSE", "0"]
+depends = "libgtk-4-1, libadwaita-1-0, libdav1d7 | libdav1d6, libx11-6, libwayland-client0"
+section = "graphics"
+priority = "optional"
+assets = [
+    ["target/release/nautilus_image_compressor", "usr/bin/", "755"],
+]
+
+[package.metadata.generate-rpm]
+name = "nautilus-image-compressor"
+assets = [
+    { source = "target/release/nautilus_image_compressor", dest = "/usr/bin/nautilus_image_compressor", mode = "0755" },
+]
